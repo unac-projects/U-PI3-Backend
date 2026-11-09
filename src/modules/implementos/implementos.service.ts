@@ -3,7 +3,7 @@ import {
   BadRequestException,
   NotFoundException,
 } from '@nestjs/common';
-import { PrismaService } from '../../prisma/prisma.service.js'; // Subir 2 niveles desde modules/implementos
+import { PrismaService } from '../../prisma/prisma.service.js';
 import { EstadoPrestamo } from '@prisma/client';
 import { randomUUID } from 'crypto';
 import {
@@ -15,64 +15,100 @@ import {
 export class ImplementosService {
   constructor(private readonly prisma: PrismaService) {}
 
-  // RF-09: Crear un nuevo implemento en el inventario
+  // 1. CREAR (Create)
   async crearImplemento(dto: CreateImplementoDto) {
     return this.prisma.implemento.create({
       data: {
         nombre: dto.nombre,
         descripcion: dto.descripcion,
         stockTotal: dto.stockTotal,
-        stockDisponible: dto.stockTotal, // Al crear, todo el stock está disponible
+        stockDisponible: dto.stockTotal, // Inicialmente igual al total
         categoria: dto.categoria,
       },
     });
   }
 
-  // RF-09: Catálogo de Inventario en Tiempo Real
+  // 2. LEER / OBTENER TODOS (Read)
   async obtenerInventario() {
-    return this.prisma.implemento.findMany();
+    return this.prisma.implemento.findMany({
+      orderBy: { id: 'desc' },
+    });
   }
 
-  // RF-10: Solicitud de Préstamo con Código QR
-  async solicitarPrestamo(dto: SolicitarPrestamoDto) {
-    // 1. Validar si el usuario está sancionado (RF-12)
-    const usuario = await this.prisma.usuario.findUnique({
-      where: { id: dto.usuarioId },
+  // 2. LEER UNO POR ID (Read One)
+  async obtenerPorId(id: number) {
+    const implemento = await this.prisma.implemento.findUnique({
+      where: { id },
     });
-    if (!usuario) {
-      throw new NotFoundException('El usuario no existe.');
-    }
-    if (usuario.estado === 'SANCIONADO') {
+    if (!implemento) throw new NotFoundException('Implemento no encontrado.');
+    return implemento;
+  }
+
+  // 3. ACTUALIZAR (Update)
+  async actualizarImplemento(id: number, dto: Partial<CreateImplementoDto>) {
+    await this.obtenerPorId(id); // Validar existencia
+
+    return this.prisma.implemento.update({
+      where: { id },
+      data: {
+        ...dto,
+        // Si se actualiza el stockTotal, ajustamos el disponible proporcionalmente
+        ...(dto.stockTotal !== undefined && {
+          stockTotal: dto.stockTotal,
+          stockDisponible: dto.stockTotal,
+        }),
+      },
+    });
+  }
+
+  // 4. ELIMINAR (Delete)
+  async eliminarImplemento(id: number) {
+    await this.obtenerPorId(id);
+
+    // Verificar si tiene préstamos activos antes de borrar
+    const prestamosActivos = await this.prisma.prestamo.count({
+      where: {
+        implementoId: id,
+        estado: { in: ['SOLICITADO', 'EN_PRESTAMO'] },
+      },
+    });
+
+    if (prestamosActivos > 0) {
       throw new BadRequestException(
-        'El usuario se encuentra sancionado por préstamos vencidos.',
+        'No se puede eliminar un implemento con préstamos activos.',
       );
     }
 
-    // 2. Transacción atómica: verificar stock y crear préstamo
+    return this.prisma.implemento.delete({ where: { id } });
+  }
+
+  // --- MÉTODOS DE PRÉSTAMO (RF-10, RF-11) ---
+  async solicitarPrestamo(dto: SolicitarPrestamoDto) {
+    const usuario = await this.prisma.usuario.findUnique({
+      where: { id: dto.usuarioId },
+    });
+    if (!usuario || usuario.estado === 'SANCIONADO') {
+      throw new BadRequestException('Usuario no válido o sancionado.');
+    }
+
     return this.prisma.$transaction(async (tx) => {
       const implemento = await tx.implemento.findUnique({
         where: { id: dto.implementoId },
       });
       if (!implemento || implemento.stockDisponible <= 0) {
-        throw new BadRequestException(
-          'No hay existencias disponibles para este implemento.',
-        );
+        throw new BadRequestException('Sin existencias disponibles.');
       }
 
-      // Descontar 1 del stock disponible
       await tx.implemento.update({
         where: { id: dto.implementoId },
         data: { stockDisponible: implemento.stockDisponible - 1 },
       });
 
-      // Generar token único para el código QR
-      const tokenQr = `PRESTAMO-${randomUUID()}`;
-
       return tx.prestamo.create({
         data: {
           usuarioId: dto.usuarioId,
           implementoId: dto.implementoId,
-          tokenQr,
+          tokenQr: `PRESTAMO-${randomUUID()}`,
           estado: EstadoPrestamo.SOLICITADO,
         },
         include: { implemento: true },
@@ -80,19 +116,16 @@ export class ImplementosService {
     });
   }
 
-  // RF-10: Procesar entrega escaneando el código QR (Acción del Encargado CAU)
-  async entregarImplementoPorQr(tokenQr: string) {
+  async entregarPorQr(tokenQr: string) {
     const prestamo = await this.prisma.prestamo.findUnique({
       where: { tokenQr },
     });
     if (!prestamo || prestamo.estado !== EstadoPrestamo.SOLICITADO) {
-      throw new BadRequestException(
-        'El código QR es inválido o la solicitud ya fue procesada.',
-      );
+      throw new BadRequestException('Código QR inválido o ya entregado.');
     }
 
     const fechaLimite = new Date();
-    fechaLimite.setHours(fechaLimite.getHours() + 2); // 2 horas límite por defecto
+    fechaLimite.setHours(fechaLimite.getHours() + 2);
 
     return this.prisma.prestamo.update({
       where: { id: prestamo.id },
@@ -104,27 +137,46 @@ export class ImplementosService {
     });
   }
 
-  // RF-11: Registrar Devolución e Incrementar Stock
-  async registrarDevolucion(prestamoId: number) {
-    return this.prisma.$transaction(async (tx) => {
-      const prestamo = await tx.prestamo.findUnique({
-        where: { id: prestamoId },
-      });
-      if (!prestamo || prestamo.estado !== EstadoPrestamo.EN_PRESTAMO) {
-        throw new BadRequestException(
-          'El préstamo no está activo o ya fue devuelto.',
-        );
-      }
+  // Obtener préstamos activos de un estudiante
+  async obtenerPrestamosActivosUsuario(usuarioId: number) {
+    return this.prisma.prestamo.findMany({
+      where: {
+        usuarioId,
+        estado: { in: ['SOLICITADO', 'EN_PRESTAMO'] },
+      },
+      include: { implemento: true },
+      orderBy: { id: 'desc' },
+    });
+  }
 
-      // Reponer 1 en el stock disponible
+  // RF-11: Registrar devolución recibiendo directamente el Token QR que escanea el encargado
+  async devolverPorQr(tokenQr: string) {
+    const prestamo = await this.prisma.prestamo.findUnique({
+      where: { tokenQr },
+      include: { implemento: true },
+    });
+
+    if (!prestamo) {
+      throw new NotFoundException(
+        'No se encontró ningún préstamo con ese código QR.',
+      );
+    }
+
+    if (prestamo.estado === 'DEVUELTO') {
+      throw new BadRequestException(
+        'Este préstamo ya fue devuelto anteriormente.',
+      );
+    }
+
+    // Transacción atómica: Cambiar estado a DEVUELTO y reponer +1 al stock
+    return this.prisma.$transaction(async (tx) => {
       await tx.implemento.update({
         where: { id: prestamo.implementoId },
-        data: { stockDisponible: { increment: 1 } },
+        data: { stockDisponible: prestamo.implemento.stockDisponible + 1 },
       });
 
-      // Actualizar estado a DEVUELTO
       return tx.prestamo.update({
-        where: { id: prestamoId },
+        where: { id: prestamo.id },
         data: {
           estado: EstadoPrestamo.DEVUELTO,
           fechaDevolucion: new Date(),
