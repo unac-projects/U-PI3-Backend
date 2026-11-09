@@ -7,11 +7,15 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// Tus enumerados y modelos (Usuario, Rol, etc.)
+// ==========================================
+// CONFIGURACIÓN GENERAL Y USUARIOS
+// ==========================================
+
 enum Rol {
   ESTUDIANTE
   PROFESIONAL_CAU
   ENCARGADO_CAU
+  ADMINISTRATIVO
   ADMIN
 }
 
@@ -21,25 +25,34 @@ enum EstadoUsuario {
 }
 
 model Usuario {
-  id        Int           @id @default(autoincrement())
-  nombre    String
-  correo    String        @unique
-  googleId  String?       @map("google_id")
-  rol       Rol           @default(ESTUDIANTE)
-  estado    EstadoUsuario @default(ACTIVO)
-  creadoEn  DateTime      @default(now()) @map("creado_en")
+  id             Int           @id @default(autoincrement())
+  nombreCompleto String?       @map("nombre_completo")
+  nombre         String?
+  correo         String        @unique
+  documento      String?       @unique
+  googleId       String?       @map("google_id")
+  rol            Rol           @default(ESTUDIANTE)
+  estado         EstadoUsuario @default(ACTIVO)
+  creadoEn       DateTime      @default(now()) @map("creado_en")
 
-  // Campo de relación (no agrega columna en la tabla 'usuarios')
+  // Relaciones Módulo 3: Préstamos (Daniel)
   prestamos Prestamo[]
 
-  reservas  Reserva[]
+  // Relaciones Módulo 1: Reservas de Espacios (Duván)
+  reservas Reserva[]
+
+  // Relaciones Módulo 2: Agendamiento de Citas (Gabriel)
+  citasEstudiante  Cita[]                      @relation("EstudianteCitas")
+  citasProfesional Cita[]                      @relation("ProfesionalCitas")
+  disponibilidades DisponibilidadProfesional[]
 
   @@map("usuarios")
 }
 
-// ---------------------- Cambios Daniel
+// ==========================================
+// MÓDULO 3: PRÉSTAMO DE IMPLEMENTOS DEPORTIVOS
+// ==========================================
 
-// Estados del préstamo
 enum EstadoPrestamo {
   SOLICITADO
   EN_PRESTAMO
@@ -47,7 +60,6 @@ enum EstadoPrestamo {
   CANCELADO
 }
 
-// Modelo del Implemento Deportivo (RF-09)
 model Implemento {
   id              Int        @id @default(autoincrement())
   nombre          String
@@ -61,17 +73,16 @@ model Implemento {
   @@map("implementos")
 }
 
-// Modelo del Préstamo (RF-10, RF-11, RF-12)
 model Prestamo {
-  id               Int            @id @default(autoincrement())
-  usuarioId        Int            @map("usuario_id")
-  implementoId     Int            @map("implemento_id")
-  tokenQr          String         @unique @map("token_qr")
-  estado           EstadoPrestamo @default(SOLICITADO)
-  fechaSolicitud   DateTime       @default(now()) @map("fecha_solicitud")
-  fechaEntrega     DateTime?      @map("fecha_entrega")
-  fechaDevolucion  DateTime?      @map("fecha_devolucion")
-  fechaLimite      DateTime?      @map("fecha_limite")
+  id              Int            @id @default(autoincrement())
+  usuarioId       Int            @map("usuario_id")
+  implementoId    Int            @map("implemento_id")
+  tokenQr         String         @unique @map("token_qr")
+  estado          EstadoPrestamo @default(SOLICITADO)
+  fechaSolicitud  DateTime       @default(now()) @map("fecha_solicitud")
+  fechaEntrega    DateTime?      @map("fecha_entrega")
+  fechaDevolucion DateTime?      @map("fecha_devolucion")
+  fechaLimite     DateTime?      @map("fecha_limite")
 
   usuario    Usuario    @relation(fields: [usuarioId], references: [id])
   implemento Implemento @relation(fields: [implementoId], references: [id])
@@ -79,10 +90,10 @@ model Prestamo {
   @@map("prestamos")
 }
 
+// ==========================================
+// MÓDULO 1: RESERVA DE ESPACIOS DEPORTIVOS
+// ==========================================
 
-// ---------------------- Cambios Duvan
-
-// Corregido: "enum" en minúscula y el nombre EstadoReserva
 enum EstadoReserva {
   PENDIENTE
   CONFIRMADA
@@ -90,7 +101,6 @@ enum EstadoReserva {
   FINALIZADA
 }
 
-// Modelo para los Espacios Deportivos (Canchas, Sintética, Múltiple, etc.)
 model EspacioDeportivo {
   id               String    @id @default(uuid())
   nombre           String
@@ -101,7 +111,6 @@ model EspacioDeportivo {
   @@map("espacios_deportivos")
 }
 
-// Modelo para las Reservas realizadas por los estudiantes
 model Reserva {
   id               String        @id @default(uuid())
   usuarioId        Int           @map("usuario_id")
@@ -116,4 +125,55 @@ model Reserva {
   espacio EspacioDeportivo @relation(fields: [espacioId], references: [id])
 
   @@map("reservas")
+}
+
+// ==========================================
+// MÓDULO 2: AGENDAMIENTO DE CITAS DE ATENCIÓN
+// ==========================================
+
+enum CategoriaServicio {
+  PSICOLOGIA
+  NUTRITION
+  ESPIRITUAL
+}
+
+enum EstadoCita {
+  PROGRAMADA
+  ATENDIDA
+  CANCELADA
+}
+
+enum EstadoDisponibilidad {
+  DISPONIBLE
+  BLOQUEADO
+}
+
+model DisponibilidadProfesional {
+  id            Int                  @id @default(autoincrement())
+  profesionalId Int                  @map("profesional_id")
+  profesional   Usuario              @relation(fields: [profesionalId], references: [id])
+  fecha         DateTime
+  horaInicio    String               @map("hora_inicio")
+  horaFin       String               @map("hora_fin")
+  estado        EstadoDisponibilidad @default(DISPONIBLE)
+
+  creadoEn DateTime @default(now()) @map("creado_en")
+
+  @@map("disponibilidades_profesionales")
+}
+
+model Cita {
+  id            Int               @id @default(autoincrement())
+  estudianteId  Int               @map("estudiante_id")
+  estudiante    Usuario           @relation("EstudianteCitas", fields: [estudianteId], references: [id])
+  profesionalId Int               @map("profesional_id")
+  profesional   Usuario           @relation("ProfesionalCitas", fields: [profesionalId], references: [id])
+  servicio      CategoriaServicio
+  fechaHora     DateTime          @map("fecha_hora")
+  motivo        String?
+  estado        EstadoCita        @default(PROGRAMADA)
+
+  creadoEn DateTime @default(now()) @map("creado_en")
+
+  @@map("citas")
 }
