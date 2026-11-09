@@ -32,6 +32,8 @@ model Usuario {
   // Campo de relación (no agrega columna en la tabla 'usuarios')
   prestamos Prestamo[]
 
+  reservas  Reserva[]
+
   @@map("usuarios")
 }
 
@@ -75,4 +77,43 @@ model Prestamo {
   implemento Implemento @relation(fields: [implementoId], references: [id])
 
   @@map("prestamos")
+}
+
+
+// ---------------------- Cambios Duvan
+
+// Corregido: "enum" en minúscula y el nombre EstadoReserva
+enum EstadoReserva {
+  PENDIENTE
+  CONFIRMADA
+  CANCELADA
+  FINALIZADA
+}
+
+// Modelo para los Espacios Deportivos (Canchas, Sintética, Múltiple, etc.)
+model EspacioDeportivo {
+  id               String    @id @default(uuid())
+  nombre           String
+  minParticipantes Int       @default(1) @map("min_participantes")
+  creadoEn         DateTime  @default(now()) @map("creado_en")
+  reservas         Reserva[]
+
+  @@map("espacios_deportivos")
+}
+
+// Modelo para las Reservas realizadas por los estudiantes
+model Reserva {
+  id               String        @id @default(uuid())
+  usuarioId        Int           @map("usuario_id")
+  espacioId        String        @map("espacio_id")
+  fechaInicio      DateTime      @map("fecha_inicio")
+  fechaFin         DateTime      @map("fecha_fin")
+  cantidadPersonas Int           @map("cantidad_personas")
+  estado           EstadoReserva @default(CONFIRMADA)
+  creadoEn         DateTime      @default(now()) @map("creado_en")
+
+  usuario Usuario          @relation(fields: [usuarioId], references: [id])
+  espacio EspacioDeportivo @relation(fields: [espacioId], references: [id])
+
+  @@map("reservas")
 }
