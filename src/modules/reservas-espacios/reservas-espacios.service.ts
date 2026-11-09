@@ -187,4 +187,12 @@ export class ReservasEspaciosService {
       data: { estado: 'CANCELADA' },
     });
   }
+
+    async obtenerMisReservas(usuarioId: number) {
+    return this.prisma.reserva.findMany({
+      where: { usuarioId },
+      include: { espacio: true },
+      orderBy: { fechaInicio: 'desc' },
+    });
+  }
 }

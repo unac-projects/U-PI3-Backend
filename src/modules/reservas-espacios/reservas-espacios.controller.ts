@@ -32,4 +32,11 @@ export class ReservasEspaciosController {
     const usuarioId = req.user.id;
     return this.reservasEspaciosService.cancelarReserva(reservaId, usuarioId);
   }
+
+    @UseGuards(JwtAuthGuard)
+  @Get('mis-reservas')
+  obtenerMisReservas(@Req() req: any) {
+    const usuarioId = req.user.id;
+    return this.reservasEspaciosService.obtenerMisReservas(usuarioId);
+  }
 }
