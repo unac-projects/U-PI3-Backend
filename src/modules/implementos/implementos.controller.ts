@@ -2,6 +2,8 @@ import {
   Controller,
   Get,
   Post,
+  Put,
+  Delete,
   Body,
   Param,
   ParseIntPipe,
@@ -17,33 +19,59 @@ import {
 export class ImplementosController {
   constructor(private readonly implementosService: ImplementosService) {}
 
-  // RF-09: Agregar implemento al catálogo (Admin/Encargado)
+  // C - CREAR
   @Post()
-  crear(@Body() createImplementoDto: CreateImplementoDto) {
-    return this.implementosService.crearImplemento(createImplementoDto);
+  crear(@Body() dto: CreateImplementoDto) {
+    return this.implementosService.crearImplemento(dto);
   }
 
-  // RF-09: Ver catálogo de inventario
+  // R - LEER TODOS
   @Get()
-  obtenerInventario() {
+  obtenerTodos() {
     return this.implementosService.obtenerInventario();
   }
 
-  // RF-10: Solicitar un implemento (Genera QR)
+  // R - LEER UNO
+  @Get(':id')
+  obtenerUno(@Param('id', ParseIntPipe) id: number) {
+    return this.implementosService.obtenerPorId(id);
+  }
+
+  // U - ACTUALIZAR
+  @Put(':id')
+  actualizar(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: Partial<CreateImplementoDto>,
+  ) {
+    return this.implementosService.actualizarImplemento(id, dto);
+  }
+
+  // D - ELIMINAR
+  @Delete(':id')
+  eliminar(@Param('id', ParseIntPipe) id: number) {
+    return this.implementosService.eliminarImplemento(id);
+  }
+
+  // ACCIONES DE PRÉSTAMO Y QR
   @Post('solicitar')
   solicitar(@Body() dto: SolicitarPrestamoDto) {
     return this.implementosService.solicitarPrestamo(dto);
   }
 
-  // RF-10: Confirmar entrega mediante escaneo de QR
   @Post('entregar-qr')
   entregarPorQr(@Body() dto: EntregarQrDto) {
-    return this.implementosService.entregarImplementoPorQr(dto.tokenQr);
+    return this.implementosService.entregarPorQr(dto.tokenQr);
   }
 
-  // RF-11: Registrar la devolución de un implemento
-  @Post('devolver/:id')
-  registrarDevolucion(@Param('id', ParseIntPipe) id: number) {
-    return this.implementosService.registrarDevolucion(id);
+  // Obtener préstamos activos del usuario
+  @Get('mis-prestamos/:usuarioId')
+  obtenerMisPrestamos(@Param('usuarioId', ParseIntPipe) usuarioId: number) {
+    return this.implementosService.obtenerPrestamosActivosUsuario(usuarioId);
+  }
+
+  // RF-11: Devolución vía Token QR
+  @Post('devolver-qr')
+  devolverPorQr(@Body() dto: EntregarQrDto) {
+    return this.implementosService.devolverPorQr(dto.tokenQr);
   }
 }
