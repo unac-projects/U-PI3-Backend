@@ -61,8 +61,8 @@ export class ReservasEspaciosService {
     };
   }
 
-  async crearReserva(dto: CreateReservaDto) {
-    const { usuarioId, espacioId, fechaInicio: fechaInicioStr, cantidadPersonas } = dto;
+  async crearReserva(usuarioId: number, dto: CreateReservaDto) {
+    const { espacioId, fechaInicio: fechaInicioStr, cantidadPersonas } = dto;
 
     // 1. Validar existencia de usuario y su estado activo
     const usuario = await this.prisma.usuario.findUnique({

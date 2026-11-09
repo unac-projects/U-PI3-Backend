@@ -1,9 +1,6 @@
 import { IsNotEmpty, IsString, IsInt, Min, IsDateString } from 'class-validator';
 
 export class CreateReservaDto {
-  @IsInt()
-  @IsNotEmpty()
-  usuarioId: number;
 
   @IsString()
   @IsNotEmpty()
